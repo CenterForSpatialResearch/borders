@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>border</title>
+<meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+<link href="https://api.mapbox.com/mapbox-gl-js/v2.8.1/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v2.8.1/mapbox-gl.js"></script>
+<script src="d3.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@100;300;400;900&display=swap" rel="stylesheet">
+<style>
+body { margin: 0; padding: 0; font-family:"Roboto"; }
+#map { position: absolute; top: 0; bottom: 0; width: 100%; }
+#key{padding:20px;}
+#info{padding:20px; font-size:24px;}
+</style>
+</head>
+<body>
+
+<div id="info"></div>
+<div id="key"></div>
+<div id="map"></div>
+<script>
+	var cats = ["Series_Complete_Pop_Pct","Booster_Doses_Vax_Pct"]
+	var currentCat = cats[1]
+	d3.select("#info").html(currentCat)
+	
+	var lineStops = [[9,0],[10,1],[20,2],[30,3],[40,4],[50,5]]
+	d3.select("#key").append("div").html("Difference in Vaccination Rates Between Counties")
+	for(var s in lineStops){
+		var difference = lineStops[s][0]
+		var lineWeight = lineStops[s][1]
+		if(lineWeight>0){
+			var stopDiv = d3.select("#key").append("div")
+			stopDiv.append("div").html(difference+"%").style("display","inline-block").style("width","50px")
+			.style("text-align","right").style("padding","5px")
+			stopDiv.append("div").style("width","100px").style("height","10px").style("display","inline-block")
+			.style("border-bottom",lineWeight+"px black solid")
+		}
+	}
+	
+	
+	Promise.all([d3.csv("COVID-19_Vaccinations_in_the_United_States_County (1).csv"), 	d3.json("neighboringLines_dissolved.geojson")])
+	.then(function(data){
+		//console.log(data)
+		var lines = data[1]
+		var vaccines = data[0]
+		
+		var vaccineDictionary = vaccineByFIPS(vaccines)
+		//console.log(vaccineDictionary)
+		var joinedData = joinRateDifference(lines,vaccineDictionary)
+		console.log(joinedData)
+		
+		drawMap(joinedData)
+	})
+	
+	function vaccineByFIPS(vaccines){
+		var formatted = {}
+		for(var v in vaccines){
+			var fips = "_"+vaccines[v].FIPS
+			var entry = vaccines[v]
+			formatted[fips]=entry
+		}
+		return formatted
+	}
+	
+	function joinRateDifference(lines,vaccines){
+		var newFeatures = []
+		for(var d in lines.features){
+
+			var geoid1 = "_"+lines.features[d].properties["GEOID"]
+			var geoid2 = "_"+lines.features[d].properties["GEOID_2"]
+			if(vaccines[geoid1]!=undefined && vaccines[geoid2]!=undefined){
+				//console.log(dots.features[d])
+				//console.log(vaccines)
+				//console.log(lines.features[d])
+				var rate1 = parseFloat(vaccines[geoid1][currentCat])
+				var rate2 = parseFloat(vaccines[geoid2][currentCat])
+				var difference = Math.abs(rate1-rate2)
+				//console.log([geoid1, geoid2, rate1, rate2, difference])
+			
+				var newFeature = lines.features[d]
+				newFeature.properties["difference"]=difference
+				newFeature.properties["rate1"]=rate1
+				newFeature.properties["rate2"]=rate2
+				newFeatures.push(newFeature)
+			}
+			//break
+		}
+		//console.log(newFeatures)
+		lines.features = newFeatures
+		return lines
+	}
+	
+	
+	function drawMap(data){
+		mapboxgl.accessToken = 'pk.eyJ1IjoiYzRzci1nc2FwcCIsImEiOiJja2J0ajRtNzMwOHBnMnNvNnM3Ymw5MnJzIn0.fsTNczOFZG8Ik3EtO9LdNQ';
+	    const map = new mapboxgl.Map({
+	        container: 'map', // container ID
+	        style: 'mapbox://styles/c4sr-gsapp/cl25fr4wl001i15qnxmelv27v', // custom style url from https://studio.mapbox.com/
+	        center: [-95.651,41.646], // starting position
+	        zoom: 3.8 // starting zoom
+	    });
+		map.on("load",function(){
+		
+   		map.addSource('borders', {
+   		'type': 'geojson',
+   		'data': data
+   		})
+	
+	
+   			// 	    var matchString = {
+   			// 	    property: "tally_percentile",
+   			// 	    stops: [
+   			// [0,"green"],
+   			// [.5,"yellow"],
+   			// [1,"red"]
+   			// ]
+   			// 	    }
+			var opacityScale = {
+ 	    property: "difference",
+		 	    stops: [
+					 [10,.2],
+					 [50,1]
+					 ]
+			}
+			
+ 	    var lineScale = {
+ 	    property: "difference",
+ 	    stops: lineStops
+			 	    }
+					map.setPaintProperty("counties-au0n7n", 'line-color', "#ffffff");
+	 
+					// var radiusZoomScale = {
+		// 				'base': 4,
+		// 				'stops': [
+		// 				[4, 4],
+		// 				[22, 200]
+		// 				]
+		// 			}
+					// var colorScale={
+		// 				property:"difference",
+		// 				stops:[
+		// 					[0,"#c77560"],
+		//  							[30, "#dba788"],
+		//  							[40, "#efdbcb"],
+		//  							[50,"#b3d0c7"],
+		// 					[60,"#6fa194"],
+		// 					[70,"#2f7264"],
+		// 				]
+		// 			}
+					
+					
+   		 map.addLayer({
+   		'id': "countiesBorders",
+   		'type': 'line',
+   		'source': 'borders', // reference the data source
+   		'layout': {
+   			
+   		},
+   		'paint': {
+			"line-opacity":opacityScale,//1,//opacityScale,
+			"line-width":lineScale,
+			"line-color":"#000000"
+			//'circle-radius':radiusScale,//radiusZoomScale,//4,//
+			//"circle-color":colorScale
+   		}
+   		});
+		
+		})
+	}
+	
+	
+	
+</script>
+
+</body>
+</html>
